@@ -14,11 +14,10 @@ WOS database in order to get XML data from a query using the WWS access.
 
 Installation
 ------------
+.. code::
 
-The package has been uploaded to `PyPI`_, so you can
-install the package using pip:
-
-    pip install wos
+	$ python3 setup.py build
+	$ python3 setup.py install
 
 Usage
 -----
@@ -38,6 +37,7 @@ authenticate using your username and password.
         query               query the Web of Science.
         doi                 get the WOS ID from the DOI.
         connect             connect and get an SID.
+		multidoi			retrieve WOS records or IDs for a comma separated list of DOIs
 
     optional arguments:
       -h, --help            show this help message and exit
@@ -86,6 +86,9 @@ not closed by the command line utility. Example:
 
     $ wos --sid ABCDEFGHIJKLM doi '10.1007/s00283-010-9170-7'
     10.1007/s00283-010-9170-7
+	
+	$ wos --sid ABCDEFGHIJKLM multidoi dois.csv
+	$ wos --sid ABCDEFGHIJKLM multidoi dois.csv --onlyid
 
 Check the `user_query`_ documentation to understand how to create query strings.
 
