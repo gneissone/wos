@@ -9,16 +9,27 @@ from multiprocessing.dummy import Pool as ThreadPool
 import itertools
 import time
 import logging
+import re
 logger = logging.getLogger(__name__)
 
 record_limit = 100
-speed_limit = 10 # Requests per n seconds
+speed_limit = 1 # Requests per n seconds
 delay = 1 # in n seconds (throttle limit)
-pool = ThreadPool(speed_limit) 
+pool = ThreadPool(speed_limit)
+
+_illegal_xml_chars_RE = re.compile(u'[\x00-\x08\x0b\x0c\x0e-\x1F\uD800-\uDFFF\uFFFE\uFFFF]')
+
+def escape_xml_illegal_chars(val, replacement='?'):
+    """Filter out characters that are illegal in XML.
+
+    Looks for any character in val that is not allowed in XML
+    and replaces it with replacement ('?' by default).
+    """
+    return _illegal_xml_chars_RE.sub(replacement, val)
 
 def single(wosclient, wos_query, xml_query=None, count=5, offset=1):
     """Perform a single Web of Science query and then XML query the results."""
-    logger.debug('Query: {}'.format(wos_query))
+    logger.info('Query: {}'.format(wos_query))
     result = wosclient.search(wos_query, count, offset)
     xml = _re.sub(' xmlns="[^"]+"', '', result.records, count=1).encode('utf-8')
     if xml_query:
@@ -28,10 +39,39 @@ def single(wosclient, wos_query, xml_query=None, count=5, offset=1):
         return _minidom.parseString(xml).toprettyxml()
 
 
+def single_xmlout(wosclient, wos_query, xml_query=None, count=5, offset=1):
+    """Perform a single Web of Science query and then XML query the results."""
+    logger.info('Query: {}'.format(wos_query))
+    result = wosclient.search(wos_query, count, offset)
+    xml = _re.sub(' xmlns="[^"]+"', '', result.records, count=1).encode('utf-8')
+    #logger.info(result)
+    #logger.info('XML QUERY:{}'.format(xml_query))
+    if xml_query:
+        xml = _ET.fromstring(xml)
+        for res in xml.findall(xml_query):
+            uid = res.find('UID').text[4:]
+            eh = _ET.tostring(res, encoding='UTF-8', method='xml')
+            #eh = escape_xml_illegal_chars(eh)
+            #logger.info('Eh after escape: {}'.format(eh))
+            try:
+                eh = _minidom.parseString(eh).toprettyxml()
+                with open(uid + ".xml", "w") as f:
+                    f.write(eh)
+            except:
+                logger.error('Error processing document with UID {}, saving un-pretty result'.format(uid))
+                with open(uid + ".xml", "wb") as f:
+                    f.write(eh)
+
+        #return [_ET.tostring(el, encoding='utf8', method='xml') for el in xml.findall(xml_query)]
+    else:
+        return _minidom.parseString(xml).toprettyxml(encoding="UTF-8")
+
+
 def query(wosclient, wos_query, xml_query=None, count=5, offset=1, limit=100):
     """Query Web of Science and XML query results with multiple requests."""
     results = [single(wosclient, wos_query, xml_query, min(limit, count-x+1), x)
                for x in range(offset, count+1, limit)]
+    logger.info('Offset: {}'.format(offset))
     if xml_query:
         return [el for res in results for el in res]
     else:
@@ -53,14 +93,14 @@ def doi_to_wos(wosclient, doi):
 
 def doi_to_wos_full(wosclient, query):
     """Handle queries from multi_doi."""
-    results = single(wosclient, query , None, count=record_limit)
+    logger.info(query)
+    results = single_xmlout(wosclient, query , './REC', count=record_limit)
     time.sleep(delay)
-    print(results)
 
 
 
 def multi_doi(wosclient, doifile, onlyid):
-    """Query many DOIs in a CSV file."""
+    """Query many DOIs in a CSV file and save as single XML files."""
     with open(doifile, 'r') as f:
         doi_list = f.readline().strip().split(',')
 
@@ -68,26 +108,23 @@ def multi_doi(wosclient, doifile, onlyid):
             logger.info('Retrieving WOS IDs for {} DOIs, please '
                         'wait...'.format(len(doi_list)))
             results = pool.starmap(doi_to_wos,
-                                   zip(itertools.repeat(wosclient), doi_list)) 
+                                   zip(itertools.repeat(wosclient), doi_list))
             if results:
                 print('doi,wos id')
                 for line in results:
                     print(line) if line else None
         else:
             logger.info('Querying WOS for {} DOIs, please '
-                        'wait...'.format(len(doi_list))) 
+                        'wait...'.format(len(doi_list)))
             i=0
             queries=[]
-            while i < len(doi_list): 
+            while i < len(doi_list):
                 # Chunk into combined DOI queries equivalent to the
                 # max records returned
                 chunk = doi_list[i:i+record_limit]
-                chunk = 'DO=(' + ' OR '.join(chunk) + ')'
+                chunk = 'UT=(' + ' OR '.join(chunk) + ')'
                 queries.append(chunk)
                 i+=record_limit
 
             results = pool.starmap(doi_to_wos_full,
                                    zip(itertools.repeat(wosclient), queries))
-            
-
-
