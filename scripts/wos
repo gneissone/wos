@@ -41,8 +41,10 @@ def main():
                                    'comma separated list of DOIs. '
                                    '*Requires Python3.3+ ')
     s_mdoi.add_argument('--onlyid', action='store_true', help='only retrieve '
-                        'the WoS ID for dois in CSV')
-    s_mdoi.add_argument('DOIFILE', help='parse multiple DOIs')
+                        'the WoS ID for dois or UTs in CSV')
+    s_mdoi.add_argument('--uts', action='store_true', help='query based on '
+                        'WoS UTs instead of DOIs')
+    s_mdoi.add_argument('DOIFILE', help='parse multiple DOIs or UTs')
 
     subparsers.add_parser('connect', help='connect and get an SID.')
 
@@ -57,7 +59,8 @@ def main():
             if 'DOI' in args:
                 print(doi_to_wos(wc, args.DOI))
             if 'DOIFILE' in args:
-                multi_doi(wc, args.DOIFILE, args.onlyid)
+                multi_doi(wc, args.DOIFILE, args.onlyid, args.uts)
+
 
     except suds.WebFault as wf:
         if args.verbose:

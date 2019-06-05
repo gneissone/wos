@@ -43,28 +43,40 @@ def single_xmlout(wosclient, wos_query, xml_query=None, count=5, offset=1):
     """Perform a single Web of Science query and then XML query the results."""
     logger.info('Query: {}'.format(wos_query))
     result = wosclient.search(wos_query, count, offset)
-    xml = _re.sub(' xmlns="[^"]+"', '', result.records, count=1).encode('utf-8')
-    #logger.info(result)
-    #logger.info('XML QUERY:{}'.format(xml_query))
-    if xml_query:
-        xml = _ET.fromstring(xml)
-        for res in xml.findall(xml_query):
-            uid = res.find('UID').text[4:]
-            eh = _ET.tostring(res, encoding='UTF-8', method='xml')
-            #eh = escape_xml_illegal_chars(eh)
-            #logger.info('Eh after escape: {}'.format(eh))
-            try:
-                eh = _minidom.parseString(eh).toprettyxml()
-                with open(uid + ".xml", "w") as f:
-                    f.write(eh)
-            except:
-                logger.error('Error processing document with UID {}, saving un-pretty result'.format(uid))
-                with open(uid + ".xml", "wb") as f:
-                    f.write(eh)
+    recordsFound = result.recordsFound
+    queryId = result.queryId
+    logger.info("Records found: {}".format(recordsFound))
 
-        #return [_ET.tostring(el, encoding='utf8', method='xml') for el in xml.findall(xml_query)]
-    else:
-        return _minidom.parseString(xml).toprettyxml(encoding="UTF-8")
+
+    while offset < recordsFound:
+        logger.info("Offset: {} QueryID: {}".format(offset, queryId))
+
+        xml = _re.sub(' xmlns="[^"]+"', '', result.records, count=1).encode('utf-8')
+        #logger.info('XML QUERY:{}'.format(xml_query))
+        if xml_query:
+            xml = _ET.fromstring(xml)
+
+
+            for res in xml.findall(xml_query):
+                uid = res.find('UID').text[4:]
+                eh = _ET.tostring(res, encoding='UTF-8', method='xml')
+                #eh = escape_xml_illegal_chars(eh)
+                #logger.info('Eh after escape: {}'.format(eh))
+                try:
+                    eh = _minidom.parseString(eh).toprettyxml()
+                    with open(uid + ".xml", "w") as f:
+                        f.write(eh)
+                except:
+                    logger.error('Error processing document with UID {}, saving un-pretty result'.format(uid))
+                    with open(uid + ".xml", "wb") as f:
+                        f.write(eh)
+
+            #return [_ET.tostring(el, encoding='utf8', method='xml') for el in xml.findall(xml_query)]
+        else:
+            return _minidom.parseString(xml).toprettyxml(encoding="UTF-8")
+
+        offset += record_limit
+        result = wosclient.retrieve(queryId, count, offset)
 
 
 def query(wosclient, wos_query, xml_query=None, count=5, offset=1, limit=100):
@@ -99,7 +111,7 @@ def doi_to_wos_full(wosclient, query):
 
 
 
-def multi_doi(wosclient, doifile, onlyid):
+def multi_doi(wosclient, doifile, onlyid, ut_mode=False):
     """Query many DOIs in a CSV file and save as single XML files."""
     with open(doifile, 'r') as f:
         doi_list = f.readline().strip().split(',')
@@ -122,7 +134,10 @@ def multi_doi(wosclient, doifile, onlyid):
                 # Chunk into combined DOI queries equivalent to the
                 # max records returned
                 chunk = doi_list[i:i+record_limit]
-                chunk = 'UT=(' + ' OR '.join(chunk) + ')'
+                if ut_mode:
+                    chunk = 'UT=(' + ' OR '.join(chunk) + ')'
+                else:
+                    chunk = 'DO=(' + ' OR '.join(chunk) + ')'
                 queries.append(chunk)
                 i+=record_limit
 
